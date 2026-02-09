@@ -1,0 +1,35 @@
+Process 0: N (500000) is not divisible by size (3), truncating to 499998.
+Success: the global array is sorted.
+
+===== Performance Report =====
+N = 499998, MPI processes = 3
+Phase                                 min(s)        avg(s)        max(s)   eff(avg/max)
+Step2_Generation                    0.018713      0.018717      0.018721        0.999789
+Step2_Scatter                       0.000647      0.000648      0.000648        0.999707
+Step3_LocalSort                     0.018299      0.018306      0.018311        0.999735
+Step3_Sampling_Allgather            0.000020      0.000031      0.000037        0.846166
+Step4_Splitters                     0.000002      0.000002      0.000003        0.867525
+Step5_BucketPartitioning            0.000025      0.000025      0.000025        0.995023
+Step5_Alltoall_Counts               0.000007      0.000011      0.000013        0.824215
+Step6_Alltoallv_Data                0.000409      0.000409      0.000410        0.997844
+Step7_FinalLocalSort                0.009048      0.009056      0.009060        0.999468
+Step8_Gather_Counts                 0.000012      0.000012      0.000012        0.986760
+Step8_Gatherv_Data                  0.000582      0.000583      0.000583        0.999004
+
+Total time (max across ranks): 0.051354 s
+Communication time (approx, sum of max): 0.001704 s (3.317427% of total max)
+Local sorting time (sum of max): 0.027371 s
+Globally sent data: 3999984 bytes
+Globally received data: 3999984 bytes
+Data moved across ranks (Alltoallv, approx): 2668968 bytes (66.724467% of N)
+Final bucket balance (min/avg/max): 165526 / 166666.000000 / 167775
+Balance efficiency (avg/max): 0.993390
+Bucket stddev: 918.412035 | bucket CV: 0.005510 | max/min: 1.013587
+Parallel throughput (end-to-end): 9.736264 Melem/s
+
+===== Quicksort Comparison =====
+Quicksort time (rank 0, sequential, min/5): 0.044672 s
+Quicksort time (rank 0, sequential, avg/5): 0.047326 s
+Throughput quicksort (min): 11.192584 Melem/s
+Speedup (quicksort / parallel): 0.869885
+Parallel efficiency (speedup / p): 0.289962

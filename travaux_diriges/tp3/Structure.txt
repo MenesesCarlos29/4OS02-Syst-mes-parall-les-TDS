@@ -1,0 +1,215 @@
+#include <mpi.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <numeric>
+#include <random>
+#include <string>
+#include <vector>
+
+int main(int argc, char** argv) {
+    // ---------------------------------------------------------------------
+    // Paso 1: Inicialización y Definición de Parámetros
+    // ---------------------------------------------------------------------
+    MPI_Init(&argc, &argv);
+
+    int rank = 0;
+    int size = 1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    int N = 100;  // Tamaño total por defecto
+    if (argc > 1) {
+        N = std::atoi(argv[1]);
+    }
+
+    if (rank == 0) {
+        if (N < size) {
+            std::cout << "Proceso 0: N (" << N << ") < size (" << size
+                      << "), ajustando N a " << size << " para evitar bloques vacíos.\n";
+            N = size;
+        }
+
+        if (N % size != 0) {
+            int ajustado = (N / size) * size;
+            std::cout << "Proceso 0: N (" << N << ") no divisible por size (" << size
+                      << "), truncando a " << ajustado << ".\n";
+            N = ajustado;
+        }
+    }
+
+    // Compartir N ajustado con todos los procesos
+    MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    int local_n = (size > 0) ? (N / size) : 0;
+
+    auto print_ordered = [&](const std::string& message) {
+        for (int r = 0; r < size; ++r) {
+            MPI_Barrier(MPI_COMM_WORLD);
+            if (r == rank) {
+                std::cout << message << std::flush;
+            }
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    };
+
+    // ---------------------------------------------------------------------
+    // Paso 2: Generación y Distribución (Scatter)
+    // ---------------------------------------------------------------------
+    std::vector<double> global_data;
+    if (rank == 0) {
+        global_data.resize(N);
+        std::mt19937 rng(42);
+        std::uniform_real_distribution<double> dist(0.0, 1.0);
+        for (int i = 0; i < N; ++i) {
+            global_data[i] = dist(rng);
+        }
+    }
+
+    std::vector<double> local_buffer(local_n);
+    MPI_Scatter(rank == 0 ? global_data.data() : nullptr,
+                local_n,
+                MPI_DOUBLE,
+                local_buffer.data(),
+                local_n,
+                MPI_DOUBLE,
+                0,
+                MPI_COMM_WORLD);
+
+    print_ordered("Proceso " + std::to_string(rank) + ": recibió " +
+                  std::to_string(local_n) + " elementos.\n");
+
+    // ---------------------------------------------------------------------
+    // Paso 3: Pre-ordenamiento y Muestreo (Sampling)
+    // ---------------------------------------------------------------------
+    std::sort(local_buffer.begin(), local_buffer.end());
+
+    int samples_per_process = size;
+    std::vector<double> local_samples(samples_per_process);
+    for (int i = 0; i < samples_per_process; ++i) {
+        int idx = (local_n * i) / samples_per_process;
+        if (idx >= local_n) {
+            idx = local_n - 1;
+        }
+        local_samples[i] = local_buffer[idx];
+    }
+
+    std::vector<double> all_samples(samples_per_process * size);
+    MPI_Allgather(local_samples.data(),
+                  samples_per_process,
+                  MPI_DOUBLE,
+                  all_samples.data(),
+                  samples_per_process,
+                  MPI_DOUBLE,
+                  MPI_COMM_WORLD);
+
+    // ---------------------------------------------------------------------
+    // Paso 4: Definición de Pivotes (Splitters)
+    // ---------------------------------------------------------------------
+    std::sort(all_samples.begin(), all_samples.end());
+
+    std::vector<double> pivots(size - 1);
+    for (int i = 1; i < size; ++i) {
+        pivots[i - 1] = all_samples[i * samples_per_process - 1];
+    }
+
+    // ---------------------------------------------------------------------
+    // Paso 5: Preparación para el Intercambio (Bucketing)
+    // ---------------------------------------------------------------------
+    std::vector<int> send_counts(size, 0);
+    std::vector<int> send_displs(size, 0);
+
+    int prev_index = 0;
+    for (int i = 0; i < size - 1; ++i) {
+        int idx = static_cast<int>(
+            std::upper_bound(local_buffer.begin(), local_buffer.end(), pivots[i]) -
+            local_buffer.begin());
+        send_counts[i] = idx - prev_index;
+        prev_index = idx;
+    }
+    send_counts[size - 1] = local_n - prev_index;
+
+    for (int i = 1; i < size; ++i) {
+        send_displs[i] = send_displs[i - 1] + send_counts[i - 1];
+    }
+
+    std::vector<int> recv_counts(size, 0);
+    MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    std::vector<int> recv_displs(size, 0);
+    for (int i = 1; i < size; ++i) {
+        recv_displs[i] = recv_displs[i - 1] + recv_counts[i - 1];
+    }
+
+    int total_recv = std::accumulate(recv_counts.begin(), recv_counts.end(), 0);
+
+    print_ordered("Proceso " + std::to_string(rank) + ": enviando " +
+                  std::to_string(local_n) + " elementos en total, recibiendo " +
+                  std::to_string(total_recv) + ".\n");
+
+    // ---------------------------------------------------------------------
+    // Paso 6: Intercambio de Datos (Alltoallv)
+    // ---------------------------------------------------------------------
+    std::vector<double> sorted_bucket(total_recv);
+    MPI_Alltoallv(local_buffer.data(),
+                  send_counts.data(),
+                  send_displs.data(),
+                  MPI_DOUBLE,
+                  sorted_bucket.data(),
+                  recv_counts.data(),
+                  recv_displs.data(),
+                  MPI_DOUBLE,
+                  MPI_COMM_WORLD);
+
+    // ---------------------------------------------------------------------
+    // Paso 7: Ordenamiento Local Final
+    // ---------------------------------------------------------------------
+    std::sort(sorted_bucket.begin(), sorted_bucket.end());
+
+    // ---------------------------------------------------------------------
+    // Paso 8: Recolección Final (Gatherv)
+    // ---------------------------------------------------------------------
+    int local_sorted_n = static_cast<int>(sorted_bucket.size());
+    std::vector<int> final_counts;
+    std::vector<int> final_displs;
+    std::vector<double> global_sorted_data;
+
+    if (rank == 0) {
+        final_counts.resize(size, 0);
+    }
+
+    MPI_Gather(&local_sorted_n, 1, MPI_INT,
+               rank == 0 ? final_counts.data() : nullptr, 1, MPI_INT,
+               0, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        final_displs.resize(size, 0);
+        for (int i = 1; i < size; ++i) {
+            final_displs[i] = final_displs[i - 1] + final_counts[i - 1];
+        }
+        int total_final = std::accumulate(final_counts.begin(), final_counts.end(), 0);
+        global_sorted_data.resize(total_final);
+    }
+
+    MPI_Gatherv(sorted_bucket.data(),
+                local_sorted_n,
+                MPI_DOUBLE,
+                rank == 0 ? global_sorted_data.data() : nullptr,
+                rank == 0 ? final_counts.data() : nullptr,
+                rank == 0 ? final_displs.data() : nullptr,
+                MPI_DOUBLE,
+                0,
+                MPI_COMM_WORLD);
+
+    // Validación final en el Proceso 0
+    if (rank == 0) {
+        bool ok = std::is_sorted(global_sorted_data.begin(), global_sorted_data.end());
+        std::cout << (ok ? "Éxito: el arreglo global está ordenado.\n"
+                         : "Error: el arreglo global NO está ordenado.\n");
+    }
+
+    // Limpieza
+    MPI_Finalize();
+    return 0;
+}

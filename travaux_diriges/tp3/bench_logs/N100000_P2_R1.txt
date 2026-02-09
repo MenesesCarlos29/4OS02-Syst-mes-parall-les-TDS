@@ -1,0 +1,34 @@
+Success: the global array is sorted.
+
+===== Performance Report =====
+N = 100000, MPI processes = 2
+Phase                                 min(s)        avg(s)        max(s)   eff(avg/max)
+Step2_Generation                    0.001922      0.001922      0.001923        0.999789
+Step2_Scatter                       0.000074      0.000075      0.000076        0.990462
+Step3_LocalSort                     0.002662      0.002662      0.002662        0.999961
+Step3_Sampling_Allgather            0.000009      0.000009      0.000009        0.997464
+Step4_Splitters                     0.000000      0.000000      0.000000        0.913830
+Step5_BucketPartitioning            0.000024      0.000024      0.000024        0.992426
+Step5_Alltoall_Counts               0.000003      0.000005      0.000006        0.798564
+Step6_Alltoallv_Data                0.000038      0.000038      0.000038        0.993785
+Step7_FinalLocalSort                0.002474      0.002474      0.002474        0.999982
+Step8_Gather_Counts                 0.000006      0.000006      0.000006        0.992572
+Step8_Gatherv_Data                  0.000065      0.000066      0.000066        0.996236
+
+Total time (max across ranks): 0.007909 s
+Communication time (approx, sum of max): 0.000201 s (2.541975% of total max)
+Local sorting time (sum of max): 0.005136 s
+Globally sent data: 800000 bytes
+Globally received data: 800000 bytes
+Data moved across ranks (Alltoallv, approx): 400864 bytes (50.108000% of N)
+Final bucket balance (min/avg/max): 49894 / 50000.000000 / 50106
+Balance efficiency (avg/max): 0.997884
+Bucket stddev: 106.000000 | bucket CV: 0.002120 | max/min: 1.004249
+Parallel throughput (end-to-end): 12.643499 Melem/s
+
+===== Quicksort Comparison =====
+Quicksort time (rank 0, sequential, min/5): 0.007214 s
+Quicksort time (rank 0, sequential, avg/5): 0.007722 s
+Throughput quicksort (min): 13.861950 Melem/s
+Speedup (quicksort / parallel): 0.912101
+Parallel efficiency (speedup / p): 0.456051

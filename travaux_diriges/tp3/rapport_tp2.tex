@@ -1,0 +1,423 @@
+\documentclass[11pt,a4paper]{article}
+
+% ----------------------------------------------------
+% PACKAGES ESSENTIELS
+% ----------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage{siunitx}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[strict]{changepage}
+\usepackage{framed}
+\usepackage{hyperref}
+
+% ----------------------------------------------------
+% PARAMÈTRES DE MISE EN PAGE
+% ----------------------------------------------------
+\geometry{margin=2.5cm}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+\setlength{\headheight}{13.6pt}
+\addtolength{\topmargin}{-1.6pt}
+\setlength{\emergencystretch}{2em}
+\sisetup{round-mode=places,round-precision=6}
+
+% ----------------------------------------------------
+% COULEURS ENSTA
+% ----------------------------------------------------
+\definecolor{enstaBleuFonce}{HTML}{003366}
+\definecolor{enstaBleuClair}{HTML}{0073CF}
+\definecolor{formalshade}{rgb}{0.95,0.95,1}
+
+% ----------------------------------------------------
+% CONFIGURATION DES LIENS
+% ----------------------------------------------------
+\hypersetup{
+    colorlinks=true,
+    linkcolor=enstaBleuFonce,
+    urlcolor=blue,
+    citecolor=gray
+}
+
+% ----------------------------------------------------
+% STYLE DES SECTIONS
+% ----------------------------------------------------
+\titleformat{\section}[block]
+  {\normalfont\Large\bfseries\color{enstaBleuFonce}}
+  {\thesection}{1em}{}
+  [\vspace{0.3em}\titlerule\color{enstaBleuFonce}\vspace{0.3em}]
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{enstaBleuClair}}
+  {\thesubsection}{1em}{}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\color{black!70}}
+  {\thesubsubsection}{1em}{}
+
+% ----------------------------------------------------
+% EN-TÊTES ET PIEDS DE PAGE
+% ----------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{École Nationale des techniques avancées}
+\fancyhead[R]{OS202}
+\fancyfoot[C]{\thepage}
+
+% ----------------------------------------------------
+% ENVIRONNEMENT FORMAL (ENCADRÉ)
+% ----------------------------------------------------
+\newenvironment{formal}{%
+\def\FrameCommand{%
+  \hspace{1pt}%
+  {\color{enstaBleuFonce}\vrule width 2pt}%
+  {\color{formalshade}\vrule width 4pt}%
+  \colorbox{formalshade}%
+}%
+\MakeFramed{\advance\hsize-\width\FrameRestore}%
+\noindent\hspace{-4.55pt}%
+\begin{adjustwidth}{}{7pt}%
+\vspace{4pt}%
+}{%
+\vspace{4pt}\end{adjustwidth}\endMakeFramed%
+}
+
+\newcommand{\todoentry}[1]{\textcolor{red!70!black}{\textbf{[À compléter] #1}}}
+
+% ----------------------------------------------------
+% DÉBUT DU DOCUMENT
+% ----------------------------------------------------
+\begin{document}
+\pagenumbering{gobble}
+
+% ====================================================
+% PAGE DE COUVERTURE
+% ====================================================
+\begin{titlepage}
+    \centering
+    \vspace*{3.5cm}
+
+    \includegraphics[width=0.6\textwidth]{../tp2/imgs/logo_ensta_2025.png}
+
+    \vspace{0.6cm}
+    {\Large OS202 -- Systèmes Parallèles \par}
+    \vspace{0.2cm}
+    {\huge\bfseries TD3 : Parallel Bucket Sort (MPI) \par}
+    \vspace{0.2cm}
+    {\Large\bfseries Comparaison avec Quicksort séquentiel \par}
+    \vspace{2.8cm}
+    {\Large MENESES GAMBOA Carlos \par}
+    \vfill
+    École Nationale des techniques avancées\\
+    Février 2026\par
+\end{titlepage}
+\clearpage
+\pagenumbering{arabic}
+
+% ====================================================
+% TABLE DES MATIÈRES
+% ====================================================
+\tableofcontents
+\newpage
+
+% ====================================================
+% RÉSUMÉ
+% ====================================================
+\section{Résumé}
+Ce rapport présente l'implémentation MPI de \emph{Parallel Bucket Sort} (variante \emph{Sample Sort}) et son évaluation expérimentale face à un tri \emph{Quicksort} séquentiel sur le même jeu de données. Le code mesure non seulement le temps global, mais aussi des métriques fines: coût par phase MPI, qualité de l'équilibrage des buckets, volume réel de données migrées entre processus et débit de tri (\emph{throughput}).
+
+\begin{formal}
+\textbf{Objectif du rapport:} produire une comparaison défendable entre version parallèle et baseline séquentielle, avec des métriques directement utiles pour discuter \emph{scalabilité}, \emph{efficacité} et \emph{coûts de communication}.
+\end{formal}
+
+% ====================================================
+% CONFIGURATION EXPÉRIMENTALE
+% ====================================================
+\section{Configuration expérimentale}
+
+\subsection{Machine utilisée}
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Caractéristiques de la machine d'expérimentation.}
+  \label{tab:machine}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Champ & Valeur \\
+    \midrule
+    Architecture & x86\_64 \\
+    Processeur & Intel Core i5-1135G7 @ 2.40GHz \\
+    CPU logiques & 8 \\
+    Cœurs physiques & 4 \\
+    Hyperthreading & Oui (2 threads/cœur) \\
+    Hyperviseur & WSL2 (Microsoft) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Compilation et exécution}
+\begin{itemize}[leftmargin=1.5em]
+  \item Compilation: \texttt{make}
+  \item Exécution générique: \texttt{mpirun -np p ./bucket\_sort N debug quicksort\_runs}
+  \item Paramètres recommandés pour benchmark: \texttt{debug=0}, \texttt{quicksort\_runs=5}
+  \item Exemple: \texttt{mpirun -np 4 ./bucket\_sort 1000000 0 5}
+\end{itemize}
+
+% ====================================================
+% ALGORITHME ET INSTRUMENTATION
+% ====================================================
+\section{Algorithme et instrumentation}
+
+\subsection{Pipeline Parallel Bucket Sort}
+Le code suit la séquence standard en 8 étapes:
+\begin{enumerate}[leftmargin=1.5em]
+  \item initialisation MPI et paramétrage de \(N\),
+  \item génération des données (rank 0) et \texttt{MPI\_Scatter},
+  \item tri local + échantillonnage régulier,
+  \item tri des échantillons globaux + choix des pivots,
+  \item calcul des \texttt{send\_counts}/\texttt{send\_displs},
+  \item redistribution variable via \texttt{MPI\_Alltoallv},
+  \item tri local final des buckets reçus,
+  \item collecte finale via \texttt{MPI\_Gatherv}.
+\end{enumerate}
+
+\subsection{Métriques déjà disponibles dans le code}
+Le programme \texttt{Bucket\_Sort.cpp} instrumente:
+\begin{itemize}[leftmargin=1.5em]
+  \item temps par phase (\(min/avg/max\)) entre processus,
+  \item temps total parallèle (\(max\) entre processus),
+  \item ratio communication/temps total,
+  \item volume total envoyé/reçu,
+  \item qualité d'équilibrage des buckets (\(min/avg/max\), \(avg/max\)),
+  \item comparaison avec Quicksort (temps, speedup, efficacité).
+\end{itemize}
+
+\subsection{Métriques ajoutées pour un rapport professionnel}
+Les métriques ci-dessous sont particulièrement pertinentes pour l'analyse:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Quicksort multi-runs}: temps \texttt{min} et \texttt{avg} sur \(k\) exécutions (stabilité du baseline),
+  \item \textbf{Données migrées}: part de données qui changent réellement de processus pendant \texttt{Alltoallv},
+  \item \textbf{Dispersion de charge}: écart-type, coefficient de variation (CV), ratio \(max/min\),
+  \item \textbf{Débit}: millions d'éléments triés par seconde (Melem/s), parallèle et séquentiel.
+\end{itemize}
+
+% ====================================================
+% DÉFINITIONS FORMELLES DES MÉTRIQUES
+% ====================================================
+\section{Définitions formelles des métriques}
+
+\subsection{Performance globale}
+Soit \(p\) le nombre de processus MPI.
+\[
+T_{par}(p) = \max_{r \in [0,p-1]} T_r
+\]
+\[
+S_p = \frac{T_{seq}}{T_{par}(p)}, \qquad
+E_p = \frac{S_p}{p}
+\]
+où \(T_{seq}\) est le temps Quicksort séquentiel (utiliser \(T_{seq}^{min}\) pour limiter le bruit).
+
+\subsection{Coût de communication}
+\[
+R_{comm} = \frac{T_{comm}}{T_{par}}
+\]
+avec \(T_{comm}\) approché par la somme des phases MPI de communication
+(\texttt{Scatter}, \texttt{Allgather}, \texttt{Alltoall}, \texttt{Alltoallv}, \texttt{Gather}, \texttt{Gatherv}).
+
+\subsection{Qualité d'équilibrage des buckets}
+Pour les tailles finales de buckets \(b_i\):
+\[
+\bar{b} = \frac{1}{p}\sum_{i=1}^{p} b_i, \qquad
+LB_{avg/max} = \frac{\bar{b}}{\max_i b_i}
+\]
+\[
+\sigma_b = \sqrt{\frac{1}{p}\sum_{i=1}^{p}(b_i-\bar{b})^2}, \qquad
+CV_b = \frac{\sigma_b}{\bar{b}}, \qquad
+I_{max/min}=\frac{\max_i b_i}{\min_i b_i}
+\]
+
+\subsection{Migration et débit}
+\[
+\text{MovedElements} = N - \sum_{r=0}^{p-1} \texttt{send\_counts}_r[r]
+\]
+\[
+\text{MovedRatio} = \frac{\text{MovedElements}}{N}
+\]
+\[
+\text{Throughput}_{par} = \frac{N}{T_{par}}, \qquad
+\text{Throughput}_{seq} = \frac{N}{T_{seq}^{min}}
+\]
+
+% ====================================================
+% PROTOCOLE DE MESURE
+% ====================================================
+\section{Protocole de mesure utilisé}
+\begin{enumerate}[leftmargin=1.5em]
+  \item Grille testée: \(N \in \{10^5, 5\times10^5, 10^6\}\), \(p \in \{1,2,3,4\}\).
+  \item Pour chaque couple \((N,p)\), exécuter 3 runs MPI indépendants et conserver:
+  \begin{itemize}[leftmargin=1.5em]
+    \item \(T_{par}^{avg}\), ainsi que \(T_{par}^{min}\) et \(T_{par}^{max}\),
+    \item les moyennes des métriques de communication et d'équilibrage.
+  \end{itemize}
+  \item Baseline séquentielle: Quicksort interne mesuré avec \texttt{quicksort\_runs=5} à chaque run.
+  \item Paramètres fixes: \texttt{debug=0}, même machine, même binaire.
+\end{enumerate}
+
+\begin{formal}
+\textbf{Traceabilité:}
+les logs bruts des runs sont archivés dans \texttt{bench\_logs/}, et les agrégats dans
+\texttt{benchmark\_results\_avg.csv}.
+\end{formal}
+
+% ====================================================
+% RÉSULTATS (TABLES À REMPLIR)
+% ====================================================
+\section{Résultats expérimentaux}
+
+\subsection{Baseline Quicksort (séquentiel)}
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Résultats Quicksort utilisés comme baseline de comparaison.}
+  \label{tab:quicksort-baseline}
+  \begin{tabular}{@{}rrrr@{}}
+    \toprule
+    \(N\) & \(T_{qs}^{min,avg}\) (s) & \(T_{qs}^{avg,avg}\) (s) & Throughput qs (Melem/s) \\
+    \midrule
+    100000 & 0.007714 & 0.008712 & 12.976599 \\
+    500000 & 0.038869 & 0.041491 & 12.881275 \\
+    1000000 & 0.084858 & 0.090081 & 11.787215 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Comparaison globale Bucket Sort MPI vs Quicksort}
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Résultats globaux agrégés de Bucket Sort MPI (3 runs par couple \(N,p\)).}
+  \label{tab:global-comparison}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{@{}rrrrrrrrr@{}}
+    \toprule
+    \(N\) & \(p\) & \(T_{par}^{avg}\) (s) & \(T_{par}^{[min,max]}\) (s) & \(T_{qs}^{min,avg}\) (s) & \(T_{qs}^{avg,avg}\) (s) & \(S_p^{avg}\) & \(E_p^{avg}\) & Thr. par (Melem/s) \\
+    \midrule
+    100000 & 1 & 0.010732 & [0.009461, 0.012589] & 0.007714 & 0.008712 & 0.726922 & 0.726922 & 9.456722 \\
+    100000 & 2 & 0.009170 & [0.007909, 0.011446] & 0.007072 & 0.007537 & 0.795059 & 0.397530 & 11.214214 \\
+    100000 & 3 & 0.006773 & [0.005600, 0.008311] & 0.007333 & 0.008143 & 1.102069 & 0.367356 & 15.164331 \\
+    100000 & 4 & 0.007694 & [0.006240, 0.010011] & 0.007554 & 0.011704 & 1.028315 & 0.257079 & 13.551377 \\
+    \midrule
+    500000 & 1 & 0.058392 & [0.052807, 0.066316] & 0.038869 & 0.041491 & 0.669541 & 0.669541 & 8.642737 \\
+    500000 & 2 & 0.045987 & [0.044571, 0.047428] & 0.039806 & 0.042134 & 0.866392 & 0.433196 & 10.879650 \\
+    500000 & 3 & 0.040056 & [0.037802, 0.041754] & 0.040640 & 0.044117 & 1.016815 & 0.338938 & 12.504567 \\
+    500000 & 4 & 0.039284 & [0.033652, 0.042567] & 0.042400 & 0.049501 & 1.091964 & 0.272991 & 12.871378 \\
+    \midrule
+    1000000 & 1 & 0.124194 & [0.117234, 0.137921] & 0.084858 & 0.090081 & 0.687553 & 0.687553 & 8.098800 \\
+    1000000 & 2 & 0.144780 & [0.114693, 0.175667] & 0.096668 & 0.110025 & 0.684422 & 0.342211 & 7.118998 \\
+    1000000 & 3 & 0.086940 & [0.081992, 0.089712] & 0.099635 & 0.107229 & 1.145459 & 0.381820 & 11.521473 \\
+    1000000 & 4 & 0.091129 & [0.087795, 0.097336] & 0.096957 & 0.108809 & 1.064616 & 0.266154 & 10.998145 \\
+    \bottomrule
+  \end{tabular}
+  }
+\end{table}
+
+\subsection{Communication et équilibrage}
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Métriques les plus pertinentes sur les meilleures configurations par taille.}
+  \label{tab:balance-comm}
+  \begin{tabular}{@{}rrrrrr@{}}
+    \toprule
+    \(N\) & \(p\) & Comm (\%) & Moved (\%) & \(LB_{avg/max}\) & \(CV_b\) \\
+    \midrule
+    100000 & 3 & 4.254775 & 66.660667 & 0.991995 & 0.008950 \\
+    500000 & 4 & 4.710001 & 75.029000 & 0.989770 & 0.007825 \\
+    1000000 & 3 & 4.759588 & 66.629667 & 0.997648 & 0.002322 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Décomposition par phase (cas représentatif)}
+\begin{table}[H]
+  \centering
+  \scriptsize
+  \caption{Profil des phases pour \(N=10^6\), \(p=4\) (run représentatif, \(T_{par}=0.088257\) s).}
+  \label{tab:phase-profile}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Phase & min (s) & avg (s) & max (s) & Part max/total (\%) \\
+    \midrule
+    Step2\_Generation & 0.030578 & 0.030581 & 0.030583 & 34.65 \\
+    Step2\_Scatter & 0.001312 & 0.001313 & 0.001313 & 1.49 \\
+    Step3\_LocalSort & 0.032427 & 0.032430 & 0.032432 & 36.75 \\
+    Step3\_Sampling\_Allgather & 0.000043 & 0.000044 & 0.000044 & 0.05 \\
+    Step4\_Splitters & 0.000002 & 0.000002 & 0.000002 & 0.00 \\
+    Step5\_BucketPartitioning & 0.000034 & 0.000037 & 0.000038 & 0.04 \\
+    Step5\_Alltoall\_Counts & 0.000022 & 0.000023 & 0.000024 & 0.03 \\
+    Step6\_Alltoallv\_Data & 0.000766 & 0.000779 & 0.000792 & 0.90 \\
+    Step7\_FinalLocalSort & 0.014365 & 0.014369 & 0.014373 & 16.29 \\
+    Step8\_Gather\_Counts & 0.000013 & 0.000021 & 0.000023 & 0.03 \\
+    Step8\_Gatherv\_Data & 0.001276 & 0.001279 & 0.001284 & 1.45 \\
+    \bottomrule
+  \end{tabular}
+  }
+\end{table}
+
+% ====================================================
+% ANALYSE ET DISCUSSION
+% ====================================================
+\section{Analyse et discussion}
+
+\subsection{Constats principaux}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Seuil d'intérêt du parallèle:} pour \(N=10^5\), le gain reste limité et sensible à l'overhead MPI; pour \(N \ge 5\times10^5\), les configurations \(p=3\) et \(p=4\) deviennent compétitives (speedup \(>1\) dans plusieurs cas).
+  \item \textbf{Meilleurs compromis mesurés:} \(N=10^5 \Rightarrow p=3\) (\(S=1.102\)), \(N=5\times10^5 \Rightarrow p=4\) (\(S=1.092\)), \(N=10^6 \Rightarrow p=3\) (\(S=1.145\)).
+  \item \textbf{Équilibrage robuste:} \(CV_b\) reste faible (\(\le 0.009\) pour \(p\le4\)) et \(LB_{avg/max}\) est proche de 1, ce qui indique que la sélection de splitters produit des buckets bien distribués.
+  \item \textbf{Coût de redistribution:} la part de données migrées suit la tendance attendue d'un tri global (\(\approx (1-\frac{1}{p})\times 100\%\) pour données aléatoires), avec un impact modéré tant que \(p \le 4\).
+\end{itemize}
+
+\subsection{Interprétation des métriques retenues}
+\begin{itemize}[leftmargin=1.5em]
+  \item \(T_{par}^{avg}\) + intervalle \([T_{par}^{min},T_{par}^{max}]\): mesure de performance + stabilité.
+  \item \(S_p^{avg}\), \(E_p^{avg}\): qualité réelle du parallélisme au regard du baseline séquentiel.
+  \item Comm (\%), Moved (\%): coût de communication et intensité de redistribution.
+  \item \(LB_{avg/max}\), \(CV_b\): qualité d'équilibrage des partitions finales.
+\end{itemize}
+
+% ====================================================
+% MENACES À LA VALIDITÉ
+% ====================================================
+\section{Menaces à la validité}
+\begin{itemize}[leftmargin=1.5em]
+  \item Variabilité système (processus concurrents, fréquence CPU dynamique).
+  \item Effets spécifiques à l'environnement virtualisé (WSL2).
+  \item Les métriques sont des moyennes sur 3 runs; une campagne plus longue (10+ runs) améliorerait encore la robustesse statistique.
+\end{itemize}
+
+% ====================================================
+% CONCLUSION
+% ====================================================
+\section{Conclusion}
+Cette étude montre que \emph{Parallel Bucket Sort MPI} devient pertinent lorsque la taille de problème est suffisante et que le nombre de processus reste adapté à la machine:
+\begin{itemize}[leftmargin=1.5em]
+  \item pour petites tailles (\(N=10^5\)), le gain est fragile et dominé par l'overhead,
+  \item pour tailles intermédiaires/grandes (\(N=5\times10^5\), \(10^6\)), les configurations \(p=3\) ou \(p=4\) donnent les meilleurs compromis,
+  \item l'équilibrage des buckets est globalement bon (\(CV_b\) faible), ce qui valide la stratégie de sampling/splitters,
+  \item la communication reste maîtrisée pour \(p\le4\), cohérent avec les limites matérielles de la machine testée.
+\end{itemize}
+
+Les métriques retenues (\(T_{par}\), \(S_p\), \(E_p\), Comm\%, Moved\%, \(LB_{avg/max}\), \(CV_b\)) sont suffisantes pour justifier de manière professionnelle \textbf{où} le temps est dépensé, \textbf{pourquoi} la scalabilité se limite, et \textbf{quand} l'approche parallèle dépasse Quicksort.
+
+\end{document}

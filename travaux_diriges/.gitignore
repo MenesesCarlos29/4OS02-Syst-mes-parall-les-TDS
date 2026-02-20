@@ -1,3 +1,6 @@
 
 tp4/docs/*
 !tp4/docs/*.pdf
+
+tp5/docs/*
+!tp5/docs/*.pdf

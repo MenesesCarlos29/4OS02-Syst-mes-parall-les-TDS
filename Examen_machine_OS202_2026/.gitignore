@@ -1,0 +1,4 @@
+.venv
+/Guia.md
+/__pycache__/
+*.pyc

@@ -233,9 +233,6 @@ class Visualizer3D:
         # Configuration de la caméra
         self._setup_camera()
 
-        # Ancienne voie VBO/client arrays conservée en commentaire.
-        # Elle déclenchait ici une erreur de contexte PyOpenGL sur cette machine.
-        #
         # if self.vbo_needs_update:
         #     self._update_vbo()
         #
@@ -254,7 +251,6 @@ class Visualizer3D:
         # glDisableClientState(GL_VERTEX_ARRAY)
         # glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-        # Rendu immédiat plus robuste que les client arrays/VBO avec PyOpenGL+SDL2.
         colors_with_luminosity = (
             self.colors * self.luminosities[:, np.newaxis] / 255.0
         ).astype(np.float32)

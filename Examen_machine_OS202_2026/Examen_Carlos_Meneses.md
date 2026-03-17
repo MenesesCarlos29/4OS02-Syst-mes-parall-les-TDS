@@ -72,7 +72,7 @@ Un avertissement Numba concernant la couche `TBB` est apparu pendant les mesures
 
 ### Conclusion
 
-Cette etape valide que la parallelisation avec Numba permet d'accelerer la partie la plus couteuse du programme. La meilleure performance obtenue dans nos essais correspond a `8` threads, avec un temps moyen de `80.685 ms`. La suite logique consiste maintenant a separer l'affichage et le calcul avec MPI afin d'evaluer l'impact de cette separation sur les performances globales.
+Sur ma machine, la meilleure configuration mesuree dans cette etape est `8` threads, avec un temps moyen de `80.685 ms`. Les mesures montrent donc clairement que la parallelisation avec Numba accelere la partie la plus couteuse du programme. La suite logique consiste maintenant a separer l'affichage et le calcul avec MPI afin d'evaluer l'impact de cette separation sur les performances globales.
 
 ## Etape 3 - Separation de l'affichage et du calcul avec MPI
 
@@ -125,7 +125,7 @@ On observe egalement que l'augmentation du nombre de threads continue a reduire 
 
 ### Conclusion
 
-La separation de l'affichage et du calcul avec MPI permet de clarifier l'architecture du programme et de dissocier les deux taches principales. En revanche, cette etape n'apporte pas une acceleration superieure a celle de l'etape 2, car elle ajoute des communications MPI sans encore distribuer le calcul entre plusieurs processus.
+Sur ma machine, la meilleure configuration mesuree dans cette etape est `8` threads, avec un temps moyen de `160.606 ms`. La separation de l'affichage et du calcul avec MPI clarifie bien l'architecture du programme, mais elle n'apporte pas une acceleration superieure a celle de l'etape 2, car elle ajoute des communications MPI sans encore distribuer le calcul entre plusieurs processus.
 
 ## Etape 4 - Parallelisation du calcul avec MPI
 
@@ -140,6 +140,8 @@ La version implemente utilise une distribution simple par blocs de corps :
 - chaque processus de calcul recoit les positions globales, calcule les mises a jour sur son bloc local, puis renvoie ses resultats au coordinateur.
 
 Cette approche reste volontairement simple afin de limiter les modifications du code et de produire une version executable rapidement dans le cadre de l'examen.
+
+La version implementee est une simplification par blocs de corps ; une vraie version a cellules fantomes sur la grille n'a pas ete mise en oeuvre ici.
 
 ### Methode de mesure
 
@@ -206,13 +208,13 @@ Une tentative de mesure avec `5` processus MPI a echoue non pas a cause du code,
 
 ### Conclusion
 
-Cette etape valide la parallelisation MPI du calcul avec une approche minimale mais fonctionnelle. Les mesures montrent que la combinaison `MPI + threads Numba` peut apporter une acceleration supplementaire, mais que les gains ne sont pas lineaires en raison du cout des communications et des synchronisations. Cette observation est cohérente avec le comportement attendu d'une parallelisation hybride sur un probleme de taille moderee.
+Sur ma machine, la meilleure configuration mesuree dans cette etape est `3 processus / 2 threads`, avec un temps moyen de `11.911 ms`. Les mesures montrent que la combinaison `MPI + threads Numba` peut apporter une acceleration supplementaire, mais que les gains ne sont pas lineaires en raison du cout des communications et des synchronisations. Cette observation est coherente avec le comportement attendu d'une parallelisation hybride sur un probleme de taille moderee.
 
-## Pour aller plus loin - Barnes-Hut
+## Barnes-Hut
 
 ### Distribution des boites et sous-boites
 
-Dans le cas d'un quadtree Barnes-Hut, une strategie simple et efficace consiste a partager les niveaux les plus hauts de l'arbre entre tous les processus, puis a repartir les sous-arbres plus profonds entre les differents processus.
+Dans le cas d'un quadtree Barnes-Hut, une strategie efficace consiste a partager les niveaux les plus hauts de l'arbre entre tous les processus, puis a repartir les sous-arbres plus profonds entre les differents processus.
 
 L'idee est la suivante :
 
@@ -220,7 +222,7 @@ L'idee est la suivante :
 - les sous-boites plus fines, situees aux niveaux inferieurs, sont distribuees entre les processus ;
 - chaque processus devient responsable d'un ensemble de sous-arbres et des etoiles qui y sont associees.
 
-Cette solution est interessante car les niveaux hauts contiennent peu de noeuds et peuvent donc etre partages a faible cout, tandis que le travail detaille est reparti entre processus.
+Dans Cette solution les niveaux hauts contiennent peu de noeuds et peuvent donc etre partages a faible cout, tandis que le travail detaille est reparti entre processus.
 
 ### Proposition de parallelisation MPI
 
@@ -234,7 +236,6 @@ Une parallelisation possible avec MPI serait la suivante :
    - et une descente plus fine dans les sous-arbres proches ;
 5. rassembler ensuite les accelerations ou les nouvelles positions calculees.
 
-Avec cette approche, les noeuds lointains sont traites de facon compacte grace au principe Barnes-Hut, tandis que les interactions proches sont calculees avec plus de detail. Le cout de communication est limite si l'on ne partage completement que les niveaux superieurs du quadtree.
 
 ### Conclusion
 
